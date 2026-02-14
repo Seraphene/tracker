@@ -47,7 +47,7 @@ docker compose up -d
 cd ..
 Copy-Item .env.example .env.local
 npm install
-npm run dev
+npm run de
 ```
 
 5. Open `http://localhost:3000`.
