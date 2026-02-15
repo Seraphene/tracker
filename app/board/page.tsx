@@ -17,6 +17,12 @@ type BoardSummary = {
   name: string;
 };
 
+type BoardOption = {
+  id: number;
+  board_code: string;
+  name: string;
+};
+
 const loadAuth = (): AuthState | null => {
   if (typeof window === "undefined") return null;
   const raw = sessionStorage.getItem(AUTH_KEY);
@@ -69,6 +75,7 @@ export default function BoardPage() {
   const [boardCode, setBoardCode] = useState("");
   const [boardName, setBoardName] = useState("My Savings Board");
   const [boardLabel, setBoardLabel] = useState("No board selected");
+  const [availableBoards, setAvailableBoards] = useState<BoardOption[]>([]);
   const [items, setItems] = useState<ItemRecord[]>([]);
 
   const [itemName, setItemName] = useState("");
@@ -118,12 +125,32 @@ export default function BoardPage() {
     setError("");
   };
 
+  const applyActiveBoard = (nextBoard: { board_code: string; name: string }) => {
+    setBoardCode(nextBoard.board_code);
+    setBoardName(nextBoard.name);
+    setBoardLabel(`${nextBoard.name} (${nextBoard.board_code})`);
+    saveBoardSummary({ code: nextBoard.board_code, name: nextBoard.name });
+  };
+
+  const loadBoardChoices = async (identity: AuthState | null) => {
+    if (!identity) return;
+    const data = await callBoardApi({
+      action: "list_boards",
+      username: identity.username,
+      pin: identity.pin,
+    });
+
+    const boards = (data.boards ?? []).map((entry) => ({
+      id: entry.id,
+      board_code: entry.board_code,
+      name: entry.name,
+    }));
+    setAvailableBoards(boards);
+  };
+
   const syncBoardState = (data: BoardResponse) => {
     if (data.board?.board_code) {
-      setBoardCode(data.board.board_code);
-      const label = `${data.board.name} (${data.board.board_code})`;
-      setBoardLabel(label);
-      saveBoardSummary({ code: data.board.board_code, name: data.board.name });
+      applyActiveBoard(data.board);
     }
     setItems(data.items ?? []);
     if (data.message) {
@@ -158,6 +185,7 @@ export default function BoardPage() {
         board_name: boardName,
       });
       syncBoardState(data);
+      await loadBoardChoices(auth);
       setMessage(`Board ready. Share code: ${data.board?.board_code ?? boardCode}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unknown error");
@@ -179,6 +207,7 @@ export default function BoardPage() {
         board_code: boardCode,
       });
       syncBoardState(data);
+      await loadBoardChoices(auth);
       setMessage("Joined board.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unknown error");
@@ -292,6 +321,20 @@ export default function BoardPage() {
     return { targetTotal, marketTotal };
   }, [items]);
 
+  useEffect(() => {
+    if (!auth) return;
+
+    const run = async () => {
+      try {
+        await loadBoardChoices(auth);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not load boards.");
+      }
+    };
+
+    void run();
+  }, [auth]);
+
   return (
     <main>
       <h1>Board</h1>
@@ -351,6 +394,27 @@ export default function BoardPage() {
           >
             Refresh Board
           </button>
+
+          <label htmlFor="board-select" style={{ marginTop: 12 }}>
+            My Boards
+          </label>
+          <select
+            id="board-select"
+            value={boardCode}
+            disabled={loading || !availableBoards.length}
+            onChange={(event) => {
+              const selected = availableBoards.find((board) => board.board_code === event.target.value);
+              if (!selected) return;
+              applyActiveBoard(selected);
+            }}
+          >
+            <option value="">{availableBoards.length ? "Select a board" : "No boards yet"}</option>
+            {availableBoards.map((board) => (
+              <option key={board.id} value={board.board_code}>
+                {board.name} ({board.board_code})
+              </option>
+            ))}
+          </select>
         </section>
 
         <section className="card">
@@ -364,7 +428,7 @@ export default function BoardPage() {
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>Add Item</h2>
-        <p className="meta">Add the item first, then run AI analysis on demand.</p>
+        <p className="meta">Add an item to run AI analysis immediately. Re-run AI anytime from the item row.</p>
 
         <label htmlFor="item-name">Item Name</label>
         <input

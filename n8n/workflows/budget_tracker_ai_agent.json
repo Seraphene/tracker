@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $json.body ?? $json;\nconst esc = (value) => String(value ?? \"\").trim().replace(/'/g, \"''\");\nconst action = String(payload.action ?? \"\").trim().toLowerCase();\nconst allowed = [\"login\", \"create_board\", \"join_board\", \"add_item\", \"analyze_item\", \"get_board\"];\n\nif (!allowed.includes(action)) {\n  return [{ json: { action: \"invalid\", error: \"Unsupported action\" } }];\n}\n\nconst incomingCode = String(payload.board_code ?? \"\").trim().toUpperCase();\nconst generatedCode = \"BD\" + Math.random().toString(36).slice(2, 8).toUpperCase();\nconst boardCode = incomingCode || generatedCode;\n\nreturn [{\n  json: {\n    action,\n    username: String(payload.username ?? \"\").trim(),\n    pin: String(payload.pin ?? \"\").trim(),\n    board_name: String(payload.board_name ?? \"Shared List\").trim(),\n    board_code: boardCode,\n    item_id: Number(payload.item_id ?? 0),\n    item_name: String(payload.item_name ?? \"\").trim(),\n    target_price: Number(payload.target_price ?? 0),\n    start_date: String(payload.start_date ?? \"\"),\n    end_date: String(payload.end_date ?? \"\"),\n    username_sql: esc(payload.username),\n    pin_sql: esc(payload.pin),\n    board_name_sql: esc(payload.board_name ?? \"Shared List\"),\n    board_code_sql: esc(boardCode),\n    item_name_sql: esc(payload.item_name),\n  }\n}];"
+        "jsCode": "const payload = $json.body ?? $json;\nconst esc = (value) => String(value ?? \"\").trim().replace(/'/g, \"''\");\nconst action = String(payload.action ?? \"\").trim().toLowerCase();\nconst allowed = [\"login\", \"create_board\", \"join_board\", \"list_boards\", \"add_item\", \"analyze_item\", \"get_board\"];\n\nif (!allowed.includes(action)) {\n  return [{ json: { action: \"invalid\", error: \"Unsupported action\" } }];\n}\n\nconst incomingCode = String(payload.board_code ?? \"\").trim().toUpperCase();\nconst generatedCode = \"BD\" + Math.random().toString(36).slice(2, 8).toUpperCase();\nconst boardCode = incomingCode || generatedCode;\n\nreturn [{\n  json: {\n    action,\n    username: String(payload.username ?? \"\").trim(),\n    pin: String(payload.pin ?? \"\").trim(),\n    board_name: String(payload.board_name ?? \"Shared List\").trim(),\n    board_code: boardCode,\n    item_id: Number(payload.item_id ?? 0),\n    item_name: String(payload.item_name ?? \"\").trim(),\n    target_price: Number(payload.target_price ?? 0),\n    start_date: String(payload.start_date ?? \"\"),\n    end_date: String(payload.end_date ?? \"\"),\n    username_sql: esc(payload.username),\n    pin_sql: esc(payload.pin),\n    board_name_sql: esc(payload.board_name ?? \"Shared List\"),\n    board_code_sql: esc(boardCode),\n    item_name_sql: esc(payload.item_name),\n  }\n}];"
       },
       "id": "e6bfb762-9632-409c-9733-4a4485840edb",
       "name": "Normalize Input",
@@ -134,7 +134,28 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), inserted AS (\n  INSERT INTO items (\n    board_id, item_name, target_price, market_price,\n    savings_daily, savings_weekly, start_date, end_date,\n    alternatives, analysis_summary, analysis_recommendation, added_by\n  )\n  SELECT\n    br.id,\n    '{{$json.item_name_sql}}',\n    {{$json.target_price}},\n    {{$json.market_price}},\n    {{$json.savings_daily}},\n    {{$json.savings_weekly}},\n    NULLIF('{{$json.start_date}}', '')::date,\n    NULLIF('{{$json.end_date}}', '')::date,\n    '{{$json.alternatives_sql}}'::jsonb,\n    NULLIF('{{$json.analysis_summary_sql}}', ''),\n    NULLIF('{{$json.analysis_recommendation_sql}}', ''),\n    a.id\n  FROM board_row br\n  CROSS JOIN actor a\n  WHERE {{$json.target_price}} > 0\n  RETURNING id\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM inserted)\n  THEN json_build_object('ok', true, 'message', 'Item added with AI analysis.')\n  ELSE json_build_object('ok', false, 'error', 'Could not add item. Ensure price is > 0.')\nEND AS response;",
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), boards_data AS (\n  SELECT\n    b.id,\n    b.board_code,\n    b.name,\n    bm.role,\n    bm.joined_at\n  FROM board_members bm\n  JOIN boards b ON b.id = bm.board_id\n  JOIN actor a ON a.id = bm.user_id\n  ORDER BY bm.joined_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM actor)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Boards loaded.',\n    'boards', COALESCE((SELECT json_agg(row_to_json(bd)) FROM boards_data bd), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Invalid credentials.')\nEND AS response;",
+        "options": {}
+      },
+      "id": "6c38582f-c425-43bb-ac4e-cb2865a0464c",
+      "name": "PG List Boards",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        224,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "eiDo9LSBl0FkL13Y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), inserted AS (\n  INSERT INTO items (\n    board_id, item_name, target_price, market_price,\n    savings_daily, savings_weekly, start_date, end_date,\n    alternatives, analysis_summary, analysis_recommendation, added_by\n  )\n  SELECT\n    br.id,\n    '{{$json.item_name_sql}}',\n    {{$json.target_price}},\n    {{$json.market_price}},\n    {{$json.savings_daily}},\n    {{$json.savings_weekly}},\n    NULLIF('{{$json.start_date}}', '')::date,\n    NULLIF('{{$json.end_date}}', '')::date,\n    '{{$json.alternatives_sql}}'::jsonb,\n    NULLIF('{{$json.analysis_summary_sql}}', ''),\n    NULLIF('{{$json.analysis_recommendation_sql}}', ''),\n    a.id\n  FROM board_row br\n  CROSS JOIN actor a\n  WHERE {{$json.target_price}} > 0\n  RETURNING id\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    i.analysis_summary,\n    i.analysis_recommendation,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM inserted)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Item added with AI analysis.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Could not add item. Ensure price is > 0.')\nEND AS response;",
         "options": {}
       },
       "id": "dd48133b-62ba-42dc-a791-541e7f14dc7a",
@@ -245,6 +266,21 @@
     },
     {
       "parameters": {
+        "jsCode": "const input = $(\"Normalize Input\").first().json;\nconst organic = Array.isArray($json.organic) ? $json.organic.slice(0, 8) : [];\nconst prompt = [\n  `Analyze this item for the Philippines market: ${input.item_name}`,\n  `Target price (PHP): ${input.target_price}`,\n  `Start date: ${input.start_date || \"n/a\"}`,\n  `End date: ${input.end_date || \"n/a\"}`,\n  \"Search results:\",\n  JSON.stringify(organic),\n  \"Return ONLY valid JSON with keys: market_price, alternatives (max 3), summary, recommendation.\",\n].join(\"\\n\\n\");\n\nreturn [{\n  json: {\n    ...input,\n    organic,\n    chatInput: prompt,\n  },\n}];"
+      },
+      "id": "29a0ef69-3664-44d8-9b13-2af8e8f24067",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json.chatInput}}",
         "options": {
           "systemMessage": "{\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Analyze these search results for the item '{{$json.item_name}}' and the user's target price of {{$json.target_price}} PHP. \\n\\nSearch Results: {{JSON.stringify($json.organic)}}\\n\\nTask:\\n1. Estimate the realistic market price (in PHP) based on the search results.\\n2. Suggest 3 specific alternatives (cheaper options, used market, or previous models).\\n3. Provide a concise summary of the findings.\\n4. Provide a clear recommendation (buy now, wait, or consider alternatives).\\n5. Return ONLY valid JSON in this format: { \\\"market_price\\\": 1234.56, \\\"alternatives\\\": [{ \\\"name\\\": \\\"...\\\", \\\"estimated_price\\\": 123 }], \\\"summary\\\": \\\"...\\\", \\\"recommendation\\\": \\\"...\\\" }\"\n    }]\n  }]\n}"
         }
@@ -318,6 +354,29 @@
                     "id": "7438f60e-c661-40c7-87eb-d8be4f3d284c",
                     "leftValue": "={{$json.action}}",
                     "rightValue": "analyze_item",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "df5e2731-7fe5-4daf-b810-e3508497a4d3",
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "list_boards",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
@@ -524,6 +583,17 @@
       "main": [
         [
           {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
             "node": "AI Agent1",
             "type": "main",
             "index": 0
@@ -554,6 +624,17 @@
       ]
     },
     "PG Join Board": {
+      "main": [
+        [
+          {
+            "node": "Format Common",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG List Boards": {
       "main": [
         [
           {
@@ -681,6 +762,13 @@
         [
           {
             "node": "Serper Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PG List Boards",
             "type": "main",
             "index": 0
           }

@@ -25,6 +25,10 @@ const payloadSchema = z.discriminatedUnion("action", [
     board_code: z.string().trim().min(1),
   }),
   z.object({
+    action: z.literal("list_boards"),
+    ...commonFields,
+  }),
+  z.object({
     action: z.literal("add_item"),
     ...commonFields,
     board_code: z.string().trim().min(1),

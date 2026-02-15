@@ -2,6 +2,7 @@ export type BudgetAction =
   | "login"
   | "create_board"
   | "join_board"
+  | "list_boards"
   | "add_item"
   | "analyze_item"
   | "get_board";
@@ -36,5 +37,12 @@ export interface BoardResponse {
     board_code: string;
     name: string;
   };
+  boards?: Array<{
+    id: number;
+    board_code: string;
+    name: string;
+    role?: string;
+    joined_at?: string;
+  }>;
   items?: ItemRecord[];
 }
