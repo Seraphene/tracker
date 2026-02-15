@@ -1,53 +1,49 @@
-﻿# Budget Tracker
+# Budget Tracker
 
-Next.js frontend on Vercel with n8n + Postgres backend.
+Next.js frontend (Vercel) + n8n webhook + Postgres backend.
 
 ## Architecture
 
-- Frontend: Next.js (`app/page.tsx`)
-- Frontend server API: `app/api/board/route.ts`
-- Backend: n8n webhook + PostgreSQL on GCP VM
-
-## Live backend endpoint
-
-- Base URL: `http://35.222.181.63:5678`
-- Webhook URL: `http://35.222.181.63:5678/webhook/budget_tracker`
+- Login: username + PIN (`action: "login"`).
+- Board creation: `action: "create_board"`.
+- Board joining: `action: "join_board"`.
+- Board refresh + items + item owner username: `action: "get_board"`.
+- Item add + savings math + AI recommendations: `action: "add_item"`.
 
 ## Environment variables
 
-Set these in Vercel Project Settings -> Environment Variables:
+Set these in Vercel:
 
-- `NEXT_PUBLIC_API_URL` = `http://35.222.181.63:5678/webhook/budget_tracker`
-- `N8N_WEBHOOK_SECRET` = your webhook secret
+- `N8N_WEBHOOK_URL` (preferred)
+- `N8N_WEBHOOK_SECRET`
+- `NEXT_PUBLIC_API_URL` (optional fallback)
 
-Local `.env.local` example:
+Example:
 
 ```env
+N8N_WEBHOOK_URL=http://35.222.181.63:5678/webhook/budget_tracker
 NEXT_PUBLIC_API_URL=http://35.222.181.63:5678/webhook/budget_tracker
 N8N_WEBHOOK_SECRET=replace-me
 ```
 
-## Request flow
+## API contract (`POST /api/board`)
 
-1. Browser calls `POST /api/board`.
-2. Next.js route validates action payload.
-3. Next.js route forwards to `NEXT_PUBLIC_API_URL` with header:
-   - `x-webhook-secret: ${process.env.N8N_WEBHOOK_SECRET}`
-4. n8n returns JSON response to frontend.
-
-This keeps the secret server-side and out of browser JavaScript.
-
-## API contract
-
-All requests are `POST /api/board` with JSON body:
+### `login`
+```json
+{
+  "action": "login",
+  "username": "andrei",
+  "pin": "1234"
+}
+```
 
 ### `create_board`
 ```json
 {
   "action": "create_board",
-  "username": "len",
+  "username": "andrei",
   "pin": "1234",
-  "board_name": "My Savings"
+  "board_name": "To save"
 }
 ```
 
@@ -55,7 +51,7 @@ All requests are `POST /api/board` with JSON body:
 ```json
 {
   "action": "join_board",
-  "username": "len",
+  "username": "andrei",
   "pin": "1234",
   "board_code": "BD123ABC"
 }
@@ -65,7 +61,7 @@ All requests are `POST /api/board` with JSON body:
 ```json
 {
   "action": "add_item",
-  "username": "len",
+  "username": "andrei",
   "pin": "1234",
   "board_code": "BD123ABC",
   "item_name": "Sony camera",
@@ -79,21 +75,28 @@ All requests are `POST /api/board` with JSON body:
 ```json
 {
   "action": "get_board",
-  "username": "len",
+  "username": "andrei",
   "pin": "1234",
   "board_code": "BD123ABC"
 }
 ```
 
-## n8n workflow
+## n8n workflow file
 
 Import:
 
 - `n8n/workflows/budget-tracker-main.json`
 
-Then attach Postgres credentials to all Postgres nodes and activate the workflow.
+Then:
 
-## Local run
+1. Attach Postgres credentials to all Postgres nodes.
+2. Set webhook auth header:
+   - Name: `x-webhook-secret`
+   - Value: same as `N8N_WEBHOOK_SECRET`.
+3. Add `SERPER_API_KEY` and `GEMINI_API_KEY` envs in n8n (optional, workflow has fallback values when AI output is missing).
+4. Activate workflow.
+
+## Run locally
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -101,6 +104,6 @@ npm install
 npm run dev
 ```
 
-Health check:
+Health:
 
 - `GET http://localhost:3000/api/board`

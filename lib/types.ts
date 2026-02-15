@@ -1,4 +1,4 @@
-﻿export type BudgetAction = "create_board" | "join_board" | "add_item" | "get_board";
+export type BudgetAction = "login" | "create_board" | "join_board" | "add_item" | "get_board";
 
 export interface ItemRecord {
   id: number;
@@ -17,11 +17,16 @@ export interface ItemRecord {
 export interface BoardResponse {
   ok: boolean;
   error?: string;
+  details?: unknown;
+  message?: string;
+  user?: {
+    id?: number;
+    username: string;
+  };
   board?: {
     id: number;
     board_code: string;
     name: string;
   };
   items?: ItemRecord[];
-  message?: string;
 }

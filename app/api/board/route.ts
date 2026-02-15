@@ -10,6 +10,10 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const payloadSchema = z.discriminatedUnion("action", [
   z.object({
+    action: z.literal("login"),
+    ...commonFields,
+  }),
+  z.object({
     action: z.literal("create_board"),
     ...commonFields,
     board_name: z.string().trim().min(1),
