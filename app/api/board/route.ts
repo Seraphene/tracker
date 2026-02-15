@@ -40,19 +40,21 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     message: "API route is live. Use POST /api/board for actions.",
-    hasApiUrl: Boolean(process.env.NEXT_PUBLIC_API_URL || process.env.N8N_WEBHOOK_URL),
+    hasApiUrl: Boolean(process.env.N8N_WEBHOOK_URL || process.env.NEXT_PUBLIC_API_URL),
+    hasWebhookSecret: Boolean(process.env.N8N_WEBHOOK_SECRET),
   });
 }
 
 export async function POST(request: NextRequest) {
-  const webhookUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.N8N_WEBHOOK_URL;
+  const webhookUrl = process.env.N8N_WEBHOOK_URL ?? process.env.NEXT_PUBLIC_API_URL;
   const webhookSecret = process.env.N8N_WEBHOOK_SECRET;
 
   if (!webhookUrl) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Missing NEXT_PUBLIC_API_URL in environment.",
+        error: "Missing webhook URL environment variable.",
+        details: "Set N8N_WEBHOOK_URL (preferred) or NEXT_PUBLIC_API_URL in Vercel.",
       },
       { status: 500 },
     );
@@ -96,16 +98,28 @@ export async function POST(request: NextRequest) {
       const json = JSON.parse(text);
       return NextResponse.json(json, { status: upstream.status });
     } catch {
+      if (!upstream.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Upstream n8n request failed with status ${upstream.status}.`,
+            details: text.slice(0, 600),
+          },
+          { status: upstream.status || 502 },
+        );
+      }
+
       return NextResponse.json(
         { ok: upstream.ok, raw: text },
         { status: upstream.status || 500 },
       );
     }
-  } catch {
+  } catch (caught) {
     return NextResponse.json(
       {
         ok: false,
         error: "Could not reach n8n webhook.",
+        details: caught instanceof Error ? caught.message : "Unknown network error.",
       },
       { status: 502 },
     );
