@@ -22,22 +22,22 @@
     ports:
       - "5678:5678"
     environment:
-      N8N_HOST: localhost
-      N8N_PORT: 5678
-      N8N_PROTOCOL: http
-      WEBHOOK_URL: http://localhost:5678
-      N8N_EDITOR_BASE_URL: http://localhost:5678
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: admin
-      N8N_BASIC_AUTH_PASSWORD: admin123
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_PORT: 5432
-      DB_POSTGRESDB_DATABASE: budget
-      DB_POSTGRESDB_USER: budget
-      DB_POSTGRESDB_PASSWORD: budget
-      GENERIC_TIMEZONE: Asia/Manila
-      SERPER_API_KEY: ""
-      GEMINI_API_KEY: ""
+      - N8N_HOST=35.222.181.63
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://35.222.181.63:5678
+      - N8N_EDITOR_BASE_URL=http://35.222.181.63:5678
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=budget
+      - DB_POSTGRESDB_USER=budget
+      - DB_POSTGRESDB_PASSWORD=budget
+      - GENERIC_TIMEZONE=Asia/Manila
+      - SERPER_API_KEY=${SERPER_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./n8n_data:/home/node/.n8n

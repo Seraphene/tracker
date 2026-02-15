@@ -1,66 +1,46 @@
 ﻿{
-  "name": "budget_tracker-main",
+  "name": "budget_tracker_ai_agent",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "budget_tracker",
-        "responseMode": "responseNode"
+        "responseMode": "responseNode",
+        "options": {}
       },
       "id": "webhook_budget",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        200,
-        240
-      ],
+      "position": [200, 240],
       "webhookId": "budget_tracker"
     },
     {
       "parameters": {
-        "jsCode": "const payload = $json.body ?? $json;\nconst esc = (value) => String(value ?? '').trim().replace(/'/g, \"''\");\nconst action = String(payload.action ?? '').trim();\nconst allowed = ['create_board', 'join_board', 'add_item', 'get_board'];\nif (!allowed.includes(action)) {\n  return [{ json: { action: 'invalid', username: '', pin: '', board_code: '', error: 'Unsupported action' } }];\n}\nconst incomingCode = String(payload.board_code ?? '').trim().toUpperCase();\nconst generatedCode = `BD${Math.random().toString(36).slice(2, 8).toUpperCase()}`;\nconst boardCode = incomingCode || generatedCode;\nreturn [{\n  json: {\n    action,\n    username: String(payload.username ?? '').trim(),\n    pin: String(payload.pin ?? '').trim(),\n    board_name: String(payload.board_name ?? 'Shared List').trim(),\n    board_code: boardCode,\n    item_name: String(payload.item_name ?? '').trim(),\n    target_price: Number(payload.target_price ?? 0),\n    start_date: String(payload.start_date ?? ''),\n    end_date: String(payload.end_date ?? ''),\n    username_sql: esc(payload.username),\n    pin_sql: esc(payload.pin),\n    board_name_sql: esc(payload.board_name ?? 'Shared List'),\n    board_code_sql: esc(boardCode),\n    item_name_sql: esc(payload.item_name),\n  }\n}];"
+        "jsCode": "const payload = $json.body ?? $json;\nconst esc = (value) => String(value ?? '').trim().replace(/'/g, \"''\");\nconst action = String(payload.action ?? '').trim();\nconst allowed = ['create_board', 'join_board', 'add_item', 'get_board'];\n\nif (!allowed.includes(action)) {\n  return [{ json: { action: 'invalid', error: 'Unsupported action' } }];\n}\n\nconst incomingCode = String(payload.board_code ?? '').trim().toUpperCase();\nconst generatedCode = `BD${Math.random().toString(36).slice(2, 8).toUpperCase()}`;\nconst boardCode = incomingCode || generatedCode;\n\nreturn [{\n  json: {\n    action,\n    username: String(payload.username ?? '').trim(),\n    pin: String(payload.pin ?? '').trim(),\n    board_name: String(payload.board_name ?? 'Shared List').trim(),\n    board_code: boardCode,\n    item_name: String(payload.item_name ?? '').trim(),\n    target_price: Number(payload.target_price ?? 0),\n    start_date: String(payload.start_date ?? ''),\n    end_date: String(payload.end_date ?? ''),\n    username_sql: esc(payload.username),\n    pin_sql: esc(payload.pin),\n    board_name_sql: esc(payload.board_name ?? 'Shared List'),\n    board_code_sql: esc(boardCode),\n    item_name_sql: esc(payload.item_name)\n  }\n}];"
       },
       "id": "normalize_input",
       "name": "Normalize Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        420,
-        240
-      ]
+      "position": [420, 240]
     },
     {
       "parameters": {
         "dataType": "string",
         "value1": "={{$json.action}}",
         "rules": [
-          {
-            "operation": "equal",
-            "value2": "create_board"
-          },
-          {
-            "operation": "equal",
-            "value2": "join_board"
-          },
-          {
-            "operation": "equal",
-            "value2": "add_item"
-          },
-          {
-            "operation": "equal",
-            "value2": "get_board"
-          }
+          { "operation": "equal", "value2": "create_board" },
+          { "operation": "equal", "value2": "join_board" },
+          { "operation": "equal", "value2": "add_item" },
+          { "operation": "equal", "value2": "get_board" }
         ]
       },
       "id": "switch_action",
       "name": "Switch Action",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [
-        640,
-        240
-      ]
+      "position": [640, 240]
     },
     {
       "parameters": {
@@ -71,291 +51,145 @@
       "name": "PG Create Board",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [
-        920,
-        40
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const payload = $json.response;\nreturn [{ json: typeof payload === 'string' ? JSON.parse(payload) : payload }];"
-      },
-      "id": "format_create",
-      "name": "Format Create",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1140,
-        40
-      ]
+      "position": [920, 40]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT id, board_code, name\n  FROM boards\n  WHERE board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), joined AS (\n  INSERT INTO board_members (board_id, user_id, role)\n  SELECT b.id, a.id, 'member'\n  FROM board_row b\n  CROSS JOIN actor a\n  ON CONFLICT (board_id, user_id) DO NOTHING\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM actor) AND EXISTS (SELECT 1 FROM board_row)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Joined board.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Invalid username/PIN or board code.')\nEND AS response;"
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT id, board_code, name\n  FROM boards\n  WHERE board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), joined AS (\n  INSERT INTO board_members (board_id, user_id, role)\n  SELECT b.id, a.id, 'member'\n  FROM board_row b\n  CROSS JOIN actor a\n  ON CONFLICT (board_id, user_id) DO NOTHING\n), items_data AS (\n  SELECT * FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM actor) AND EXISTS (SELECT 1 FROM board_row)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Joined board.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Invalid username/PIN or board code.')\nEND AS response;"
       },
       "id": "pg_join_board",
       "name": "PG Join Board",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [
-        920,
-        180
-      ]
+      "position": [920, 180]
     },
     {
       "parameters": {
-        "jsCode": "const payload = $json.response;\nreturn [{ json: typeof payload === 'string' ? JSON.parse(payload) : payload }];"
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-KEY", "value": "={{$env.SERPER_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "q", "value": "={{$json.item_name}} price Philippines" },
+            { "name": "gl", "value": "ph" },
+            { "name": "hl", "value": "en" }
+          ]
+        },
+        "options": {}
       },
-      "id": "format_join",
-      "name": "Format Join",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1140,
-        180
-      ]
+      "id": "serper_search",
+      "name": "Serper Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [880, 360]
     },
     {
       "parameters": {
-        "jsCode": "const start = new Date($json.start_date);\nconst end = new Date($json.end_date);\nconst target = Number($json.target_price ?? 0);\nconst diffMs = end.getTime() - start.getTime();\nconst days = Number.isFinite(diffMs) && diffMs > 0 ? Math.ceil(diffMs / 86400000) : 1;\nconst savingsDaily = Number((target / days).toFixed(2));\nconst savingsWeekly = Number((savingsDaily * 7).toFixed(2));\nconst marketPrice = Number((target * 1.12).toFixed(2));\nconst alternatives = [\n  { name: `${$json.item_name} (used market)`, estimated_price: Number((target * 0.7).toFixed(2)) },\n  { name: `Budget alternative to ${$json.item_name}`, estimated_price: Number((target * 0.8).toFixed(2)) },\n  { name: `${$json.item_name} previous model`, estimated_price: Number((target * 0.85).toFixed(2)) },\n];\nreturn [{\n  json: {\n    ...$json,\n    savings_daily: savingsDaily,\n    savings_weekly: savingsWeekly,\n    market_price: marketPrice,\n    alternatives,\n    alternatives_sql: JSON.stringify(alternatives).replace(/'/g, \"''\"),\n  },\n}];"
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "={{$env.GEMINI_API_KEY}}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Analyze these search results for the item '{{$json.item_name}}' and the user's target price of {{$json.target_price}} PHP. \\n\\nSearch Results: {{JSON.stringify($json.organic)}}\\n\\nTask:\\n1. Estimate the realistic market price (in PHP) based on the search results.\\n2. Suggest 3 specific alternatives (cheaper options, used market, or previous models).\\n3. Return ONLY valid JSON in this format: { \\\"market_price\\\": 1234.56, \\\"alternatives\\\": [{ \\\"name\\\": \\\"...\\\", \\\"estimated_price\\\": 123 }] }\"\n    }]\n  }]\n}"
       },
-      "id": "calc_and_ai_stub",
-      "name": "Calculate + AI Stub",
+      "id": "gemini_analysis",
+      "name": "Gemini Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1060, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiText = $json.candidates[0].content.parts[0].text.replace(/```json|```/g, '').trim();\nconst aiData = JSON.parse(geminiText);\n\n// Access original inputs from 2 nodes back (Normalize Input)\nconst input = $(\"Normalize Input\").first().json;\n\nconst start = new Date(input.start_date);\nconst end = new Date(input.end_date);\nconst target = Number(input.target_price ?? 0);\nconst diffMs = end.getTime() - start.getTime();\nconst days = Number.isFinite(diffMs) && diffMs > 0 ? Math.ceil(diffMs / 86400000) : 1;\n\nconst savingsDaily = Number((target / days).toFixed(2));\nconst savingsWeekly = Number((savingsDaily * 7).toFixed(2));\n\nreturn [{\n  json: {\n    ...input,\n    market_price: aiData.market_price,\n    alternatives: aiData.alternatives,\n    alternatives_sql: JSON.stringify(aiData.alternatives).replace(/'/g, \"''\"),\n    savings_daily: savingsDaily,\n    savings_weekly: savingsWeekly\n  }\n}];"
+      },
+      "id": "merge_and_format",
+      "name": "Merge & Format",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        920,
-        320
-      ]
+      "position": [1240, 360]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), inserted AS (\n  INSERT INTO items (\n    board_id,\n    item_name,\n    target_price,\n    market_price,\n    savings_daily,\n    savings_weekly,\n    start_date,\n    end_date,\n    alternatives,\n    added_by\n  )\n  SELECT\n    br.id,\n    '{{$json.item_name_sql}}',\n    {{$json.target_price}},\n    {{$json.market_price}},\n    {{$json.savings_daily}},\n    {{$json.savings_weekly}},\n    NULLIF('{{$json.start_date}}', '')::date,\n    NULLIF('{{$json.end_date}}', '')::date,\n    '{{$json.alternatives_sql}}'::jsonb,\n    a.id\n  FROM board_row br\n  CROSS JOIN actor a\n  RETURNING id\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM inserted)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Item added.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Could not add item. Check board membership.')\nEND AS response;"
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), inserted AS (\n  INSERT INTO items (\n    board_id, item_name, target_price, market_price, \n    savings_daily, savings_weekly, start_date, end_date, \n    alternatives, added_by\n  )\n  SELECT\n    br.id, '{{$json.item_name_sql}}', {{$json.target_price}}, \n    {{$json.market_price}}, {{$json.savings_daily}}, {{$json.savings_weekly}},\n    NULLIF('{{$json.start_date}}', '')::date, NULLIF('{{$json.end_date}}', '')::date,\n    '{{$json.alternatives_sql}}'::jsonb, a.id\n  FROM board_row br\n  CROSS JOIN actor a\n  RETURNING id\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM inserted)\n  THEN json_build_object('ok', true, 'message', 'Item added with AI analysis.')\n  ELSE json_build_object('ok', false, 'error', 'Could not add item.')\nEND AS response;"
       },
       "id": "pg_add_item",
       "name": "PG Add Item",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [
-        1140,
-        320
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const payload = $json.response;\nreturn [{ json: typeof payload === 'string' ? JSON.parse(payload) : payload }];"
-      },
-      "id": "format_add",
-      "name": "Format Add",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1360,
-        320
-      ]
+      "position": [1420, 360]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM board_row)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Board refreshed.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Invalid credentials or board code.')\nEND AS response;"
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), items_data AS (\n  SELECT * FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM board_row)\n  THEN json_build_object(\n    'ok', true,\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Invalid credentials.')\nEND AS response;"
       },
       "id": "pg_get_board",
       "name": "PG Get Board",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [
-        920,
-        460
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const payload = $json.response;\nreturn [{ json: typeof payload === 'string' ? JSON.parse(payload) : payload }];"
-      },
-      "id": "format_get",
-      "name": "Format Get",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1140,
-        460
-      ]
+      "position": [920, 520]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{$json}}",
+        "responseBody": "={{$json.response}}",
         "options": {}
       },
-      "id": "respond",
-      "name": "Respond",
+      "id": "respond_webhook",
+      "name": "Respond Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        1600,
-        240
-      ]
+      "position": [1700, 240]
+    },
+    {
+        "parameters": {
+          "jsCode": "const payload = $json.response;\nreturn [{ json: typeof payload === 'string' ? JSON.parse(payload) : payload }];"
+        },
+        "id": "format_common",
+        "name": "Format Common",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1560, 240]
     }
   ],
   "connections": {
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Normalize Input",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Normalize Input": {
-      "main": [
-        [
-          {
-            "node": "Switch Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
+    "Webhook": { "main": [[{ "node": "Normalize Input", "type": "main", "index": 0 }]] },
+    "Normalize Input": { "main": [[{ "node": "Switch Action", "type": "main", "index": 0 }]] },
     "Switch Action": {
       "main": [
-        [
-          {
-            "node": "PG Create Board",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "PG Join Board",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Calculate + AI Stub",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "PG Get Board",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "PG Create Board", "type": "main", "index": 0 }],
+        [{ "node": "PG Join Board", "type": "main", "index": 0 }],
+        [{ "node": "Serper Search", "type": "main", "index": 0 }],
+        [{ "node": "PG Get Board", "type": "main", "index": 0 }]
       ]
     },
-    "PG Create Board": {
-      "main": [
-        [
-          {
-            "node": "Format Create",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format Create": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "PG Join Board": {
-      "main": [
-        [
-          {
-            "node": "Format Join",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format Join": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Calculate + AI Stub": {
-      "main": [
-        [
-          {
-            "node": "PG Add Item",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "PG Add Item": {
-      "main": [
-        [
-          {
-            "node": "Format Add",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format Add": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "PG Get Board": {
-      "main": [
-        [
-          {
-            "node": "Format Get",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format Get": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
-  },
-  "active": false,
-  "settings": {
-    "executionOrder": "v1"
+    "Serper Search": { "main": [[{ "node": "Gemini Analysis", "type": "main", "index": 0 }]] },
+    "Gemini Analysis": { "main": [[{ "node": "Merge & Format", "type": "main", "index": 0 }]] },
+    "Merge & Format": { "main": [[{ "node": "PG Add Item", "type": "main", "index": 0 }]] },
+    "PG Create Board": { "main": [[{ "node": "Format Common", "type": "main", "index": 0 }]] },
+    "PG Join Board": { "main": [[{ "node": "Format Common", "type": "main", "index": 0 }]] },
+    "PG Add Item": { "main": [[{ "node": "Format Common", "type": "main", "index": 0 }]] },
+    "PG Get Board": { "main": [[{ "node": "Format Common", "type": "main", "index": 0 }]] },
+    "Format Common": { "main": [[{ "node": "Respond Webhook", "type": "main", "index": 0 }]] }
   }
 }

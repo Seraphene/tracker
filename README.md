@@ -1,95 +1,106 @@
-<<<<<<< HEAD
-# budget-tracker
-Agentic AI powered budget tracker.
-=======
-﻿# Budget Tracker (Next.js + n8n + Postgres)
+﻿# Budget Tracker
 
-This repository now includes a working starter for your planned architecture:
+Next.js frontend on Vercel with n8n + Postgres backend.
 
-- Next.js frontend (Vercel-ready) that calls one API route.
-- API route that forwards actions to n8n webhook.
-- Postgres schema for users/PIN, shared boards, board members, and items.
-- Importable n8n workflow JSON for create/join/get/add item flows.
-- Docker Compose for local n8n + Postgres.
+## Architecture
 
-## File map
+- Frontend: Next.js (`app/page.tsx`)
+- Frontend server API: `app/api/board/route.ts`
+- Backend: n8n webhook + PostgreSQL on GCP VM
 
-- `app/page.tsx`: collaborative UI (create board, join board, add item, fetch board).
-- `app/api/board/route.ts`: backend proxy from Next.js to n8n webhook.
-- `db/schema.sql`: database schema.
-- `infra/docker-compose.yml`: local n8n + Postgres stack.
-- `n8n/workflows/budget_tracker-main.json`: n8n workflow export JSON.
-- `.env.example`: environment variables for frontend.
+## Live backend endpoint
 
-## Quick start
+- Base URL: `http://35.222.181.63:5678`
+- Webhook URL: `http://35.222.181.63:5678/webhook/budget_tracker`
 
-1. Start infrastructure:
+## Environment variables
 
-```powershell
-cd infra
-docker compose up -d
+Set these in Vercel Project Settings -> Environment Variables:
+
+- `NEXT_PUBLIC_API_URL` = `http://35.222.181.63:5678/webhook/budget_tracker`
+- `N8N_WEBHOOK_SECRET` = your webhook secret
+
+Local `.env.local` example:
+
+```env
+NEXT_PUBLIC_API_URL=http://35.222.181.63:5678/webhook/budget_tracker
+N8N_WEBHOOK_SECRET=replace-me
 ```
 
-2. In n8n UI (`http://localhost:5678`), create Postgres credentials:
-   - Host: `postgres`
-   - DB: `budget`
-   - User: `budget`
-   - Password: `budget`
+## Request flow
 
-3. Import workflow:
-   - Import `n8n/workflows/budget_tracker-main.json`
-   - Assign Postgres credentials to all Postgres nodes
-   - Activate the workflow
+1. Browser calls `POST /api/board`.
+2. Next.js route validates action payload.
+3. Next.js route forwards to `NEXT_PUBLIC_API_URL` with header:
+   - `x-webhook-secret: ${process.env.N8N_WEBHOOK_SECRET}`
+4. n8n returns JSON response to frontend.
 
-4. Configure frontend:
+This keeps the secret server-side and out of browser JavaScript.
 
-```powershell
-cd ..
-Copy-Item .env.example .env.local
-npm install
-npm run de
-```
+## API contract
 
-5. Open `http://localhost:3000`.
+All requests are `POST /api/board` with JSON body:
 
-## API contract used by frontend
-
-POST `/api/board`
-
-Payload:
-
+### `create_board`
 ```json
 {
-  "action": "create_board | join_board | add_item | get_board",
+  "action": "create_board",
   "username": "len",
   "pin": "1234",
-  "board_code": "optional",
-  "board_name": "optional",
-  "item_name": "optional",
+  "board_name": "My Savings"
+}
+```
+
+### `join_board`
+```json
+{
+  "action": "join_board",
+  "username": "len",
+  "pin": "1234",
+  "board_code": "BD123ABC"
+}
+```
+
+### `add_item`
+```json
+{
+  "action": "add_item",
+  "username": "len",
+  "pin": "1234",
+  "board_code": "BD123ABC",
+  "item_name": "Sony camera",
   "target_price": 12000,
   "start_date": "2026-02-16",
   "end_date": "2026-06-30"
 }
 ```
 
-## Important limitations and what you must do manually
+### `get_board`
+```json
+{
+  "action": "get_board",
+  "username": "len",
+  "pin": "1234",
+  "board_code": "BD123ABC"
+}
+```
 
-1. I could not run live external AI/search APIs in this environment.
-   - Current node `Calculate + AI Stub` generates placeholder market price and alternatives.
-   - Replace this with real n8n AI Agent + Serper/SerpApi + Gemini/OpenAI nodes.
+## n8n workflow
 
-2. I could not verify your exact n8n version/node parameter compatibility.
-   - If import shows parameter warnings, re-open each node and re-save it in your n8n UI.
+Import:
 
-3. Secrets and production hardening are still on you.
-   - Change default n8n basic auth in `infra/docker-compose.yml`.
-   - Use HTTPS and firewall/VPN for n8n in production.
-   - Set a strong `N8N_WEBHOOK_SECRET` in both frontend env and n8n validation logic.
+- `n8n/workflows/budget-tracker-main.json`
 
-4. I did not run full end-to-end integration tests (Docker + n8n UI + credentials setup cannot be completed here).
-   - After import, test each action from the UI: create board, join board, add item, refresh board.
+Then attach Postgres credentials to all Postgres nodes and activate the workflow.
 
-## Suggested production next step
+## Local run
 
-- Move Postgres from local container to Supabase and point n8n Postgres credentials to Supabase connection details.
->>>>>>> 77e62d8 (fixed)
+```powershell
+Copy-Item .env.example .env.local
+npm install
+npm run dev
+```
+
+Health check:
+
+- `GET http://localhost:3000/api/board`

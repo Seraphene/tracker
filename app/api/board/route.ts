@@ -1,36 +1,58 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-const actionSchema = z.enum(["create_board", "join_board", "add_item", "get_board"]);
+const commonFields = {
+  username: z.string().trim().min(1),
+  pin: z.string().trim().min(4),
+};
 
-const payloadSchema = z.object({
-  action: actionSchema,
-  username: z.string().min(1),
-  pin: z.string().min(4),
-  board_code: z.string().optional(),
-  board_name: z.string().optional(),
-  item_name: z.string().optional(),
-  target_price: z.number().optional(),
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-});
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const payloadSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("create_board"),
+    ...commonFields,
+    board_name: z.string().trim().min(1),
+    board_code: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    action: z.literal("join_board"),
+    ...commonFields,
+    board_code: z.string().trim().min(1),
+  }),
+  z.object({
+    action: z.literal("add_item"),
+    ...commonFields,
+    board_code: z.string().trim().min(1),
+    item_name: z.string().trim().min(1),
+    target_price: z.number().positive(),
+    start_date: isoDate,
+    end_date: isoDate,
+  }),
+  z.object({
+    action: z.literal("get_board"),
+    ...commonFields,
+    board_code: z.string().trim().min(1),
+  }),
+]);
 
 export async function GET() {
   return NextResponse.json({
     ok: true,
     message: "API route is live. Use POST /api/board for actions.",
+    hasApiUrl: Boolean(process.env.NEXT_PUBLIC_API_URL || process.env.N8N_WEBHOOK_URL),
   });
 }
 
 export async function POST(request: NextRequest) {
-  const webhookUrl = process.env.N8N_WEBHOOK_URL;
+  const webhookUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.N8N_WEBHOOK_URL;
   const webhookSecret = process.env.N8N_WEBHOOK_SECRET;
 
   if (!webhookUrl) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Missing N8N_WEBHOOK_URL in environment.",
+        error: "Missing NEXT_PUBLIC_API_URL in environment.",
       },
       { status: 500 },
     );
