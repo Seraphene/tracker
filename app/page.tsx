@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { BoardResponse, ItemRecord } from "@/lib/types";
 
 interface ApiPayload {
@@ -50,7 +50,7 @@ export default function HomePage() {
   const [boardCode, setBoardCode] = useState("");
   const [boardName, setBoardName] = useState("My Savings Board");
   const [itemName, setItemName] = useState("");
-  const [targetPrice, setTargetPrice] = useState("0");
+  const [targetPrice, setTargetPrice] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [items, setItems] = useState<ItemRecord[]>([]);
@@ -63,6 +63,18 @@ export default function HomePage() {
     setMessage("");
     setError("");
   };
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 3500);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(""), 5000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   const syncBoardState = (data: BoardResponse) => {
     if (data.board?.board_code) {
@@ -150,9 +162,24 @@ export default function HomePage() {
         start_date: startDate,
         end_date: endDate,
       });
-      syncBoardState(data);
+
+      if (data.board || data.items) {
+        syncBoardState(data);
+      } else {
+        const refreshed = await callApi({
+          action: "get_board",
+          username,
+          pin,
+          board_code: boardCode,
+        });
+        syncBoardState(refreshed);
+      }
+
       setMessage("Item added.");
       setItemName("");
+      setTargetPrice("");
+      setStartDate("");
+      setEndDate("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unknown error");
     } finally {
@@ -282,6 +309,12 @@ export default function HomePage() {
           </button>
         </section>
       </div>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>Current Board</h2>
+        <p className="meta">{boardLabel}</p>
+        <p className="meta">Share Code: {boardCode || "Not set yet"}</p>
+      </section>
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>Items</h2>
