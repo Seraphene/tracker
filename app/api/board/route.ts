@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
   const webhookSecret = process.env.N8N_WEBHOOK_SECRET;
 
   if (!webhookUrl) {
+    console.error("API/board: missing webhook URL env");
     return NextResponse.json(
       {
         ok: false,
@@ -90,31 +91,64 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(parsed.data),
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     });
 
     const text = await upstream.text();
+    let parsedUpstreamJson: unknown;
 
     try {
-      const json = JSON.parse(text);
-      return NextResponse.json(json, { status: upstream.status });
+      parsedUpstreamJson = JSON.parse(text);
     } catch {
-      if (!upstream.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `Upstream n8n request failed with status ${upstream.status}.`,
-            details: text.slice(0, 600),
-          },
-          { status: upstream.status || 502 },
-        );
-      }
+      parsedUpstreamJson = undefined;
+    }
+
+    if (!upstream.ok) {
+      const jsonObj =
+        parsedUpstreamJson && typeof parsedUpstreamJson === "object"
+          ? (parsedUpstreamJson as Record<string, unknown>)
+          : null;
+
+      const upstreamMessage =
+        (jsonObj?.error as string | undefined) ??
+        (jsonObj?.message as string | undefined) ??
+        `Upstream n8n request failed with status ${upstream.status}.`;
+
+      const upstreamDetails =
+        typeof parsedUpstreamJson === "string"
+          ? parsedUpstreamJson
+          : parsedUpstreamJson
+            ? JSON.stringify(parsedUpstreamJson)
+            : text;
+
+      console.error("API/board upstream error", {
+        status: upstream.status,
+        message: upstreamMessage,
+      });
 
       return NextResponse.json(
-        { ok: upstream.ok, raw: text },
-        { status: upstream.status || 500 },
+        {
+          ok: false,
+          error: upstreamMessage,
+          details: upstreamDetails.slice(0, 1200),
+        },
+        { status: upstream.status || 502 },
       );
     }
+
+    if (parsedUpstreamJson !== undefined) {
+      return NextResponse.json(parsedUpstreamJson, { status: upstream.status });
+    }
+
+    return NextResponse.json(
+      { ok: true, raw: text },
+      { status: upstream.status || 200 },
+    );
   } catch (caught) {
+    console.error("API/board fetch failure", {
+      message: caught instanceof Error ? caught.message : "Unknown network error",
+    });
+
     return NextResponse.json(
       {
         ok: false,

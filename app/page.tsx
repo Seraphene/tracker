@@ -22,10 +22,23 @@ async function callApi(payload: ApiPayload): Promise<BoardResponse> {
     body: JSON.stringify(payload),
   });
 
-  const data = (await response.json()) as BoardResponse;
+  const raw = await response.text();
+  let data: BoardResponse;
+
+  try {
+    data = JSON.parse(raw) as BoardResponse;
+  } catch {
+    throw new Error(`Request failed (${response.status}): ${raw.slice(0, 240)}`);
+  }
 
   if (!response.ok || !data.ok) {
-    throw new Error(data.error ?? "Request failed");
+    const details =
+      typeof (data as { details?: unknown }).details === "string"
+        ? (data as { details?: string }).details
+        : undefined;
+    throw new Error(
+      `${data.error ?? `Request failed (${response.status})`}${details ? ` - ${details}` : ""}`,
+    );
   }
 
   return data;
