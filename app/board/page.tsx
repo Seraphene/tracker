@@ -237,7 +237,7 @@ export default function BoardPage() {
         syncBoardState(refreshed);
       }
 
-      setMessage("Item added. Run analysis for recommendations.");
+      setMessage("Item added with AI analysis.");
       setItemName("");
       setTargetPrice("");
       setStartDate("");
@@ -295,7 +295,7 @@ export default function BoardPage() {
   return (
     <main>
       <h1>Board</h1>
-      <p>Manage shared boards, add items, and run AI insights when you need them.</p>
+      <p>Manage shared boards, add items with AI insights automatically, and re-run analysis anytime.</p>
 
       <div className="toolbar">
         <div>
