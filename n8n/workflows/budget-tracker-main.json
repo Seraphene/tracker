@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const payload = $json.body ?? $json;\nconst esc = (value) => String(value ?? \"\").trim().replace(/'/g, \"''\");\nconst action = String(payload.action ?? \"\").trim().toLowerCase();\nconst allowed = [\"login\", \"create_board\", \"join_board\", \"add_item\", \"get_board\"];\n\nif (!allowed.includes(action)) {\n  return [{ json: { action: \"invalid\", error: \"Unsupported action\" } }];\n}\n\nconst incomingCode = String(payload.board_code ?? \"\").trim().toUpperCase();\nconst generatedCode = \"BD\" + Math.random().toString(36).slice(2, 8).toUpperCase();\nconst boardCode = incomingCode || generatedCode;\n\nreturn [{\n  json: {\n    action,\n    username: String(payload.username ?? \"\").trim(),\n    pin: String(payload.pin ?? \"\").trim(),\n    board_name: String(payload.board_name ?? \"Shared List\").trim(),\n    board_code: boardCode,\n    item_name: String(payload.item_name ?? \"\").trim(),\n    target_price: Number(payload.target_price ?? 0),\n    start_date: String(payload.start_date ?? \"\"),\n    end_date: String(payload.end_date ?? \"\"),\n    username_sql: esc(payload.username),\n    pin_sql: esc(payload.pin),\n    board_name_sql: esc(payload.board_name ?? \"Shared List\"),\n    board_code_sql: esc(boardCode),\n    item_name_sql: esc(payload.item_name),\n  }\n}];"
+        "jsCode": "const payload = $json.body ?? $json;\nconst esc = (value) => String(value ?? \"\").trim().replace(/'/g, \"''\");\nconst action = String(payload.action ?? \"\").trim().toLowerCase();\nconst allowed = [\"login\", \"create_board\", \"join_board\", \"add_item\", \"analyze_item\", \"get_board\"];\n\nif (!allowed.includes(action)) {\n  return [{ json: { action: \"invalid\", error: \"Unsupported action\" } }];\n}\n\nconst incomingCode = String(payload.board_code ?? \"\").trim().toUpperCase();\nconst generatedCode = \"BD\" + Math.random().toString(36).slice(2, 8).toUpperCase();\nconst boardCode = incomingCode || generatedCode;\n\nreturn [{\n  json: {\n    action,\n    username: String(payload.username ?? \"\").trim(),\n    pin: String(payload.pin ?? \"\").trim(),\n    board_name: String(payload.board_name ?? \"Shared List\").trim(),\n    board_code: boardCode,\n    item_id: Number(payload.item_id ?? 0),\n    item_name: String(payload.item_name ?? \"\").trim(),\n    target_price: Number(payload.target_price ?? 0),\n    start_date: String(payload.start_date ?? \"\"),\n    end_date: String(payload.end_date ?? \"\"),\n    username_sql: esc(payload.username),\n    pin_sql: esc(payload.pin),\n    board_name_sql: esc(payload.board_name ?? \"Shared List\"),\n    board_code_sql: esc(boardCode),\n    item_name_sql: esc(payload.item_name),\n  }\n}];"
       },
       "id": "normalize_input",
       "name": "Normalize Input",
@@ -51,6 +51,10 @@
           {
             "operation": "equal",
             "value2": "add_item"
+          },
+          {
+            "operation": "equal",
+            "value2": "analyze_item"
           },
           {
             "operation": "equal",
@@ -196,15 +200,29 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), inserted AS (\n  INSERT INTO items (\n    board_id, item_name, target_price, market_price,\n    savings_daily, savings_weekly, start_date, end_date,\n    alternatives, added_by\n  )\n  SELECT\n    br.id,\n    '{{$json.item_name_sql}}',\n    {{$json.target_price}},\n    {{$json.market_price}},\n    {{$json.savings_daily}},\n    {{$json.savings_weekly}},\n    NULLIF('{{$json.start_date}}', '')::date,\n    NULLIF('{{$json.end_date}}', '')::date,\n    '{{$json.alternatives_sql}}'::jsonb,\n    a.id\n  FROM board_row br\n  CROSS JOIN actor a\n  RETURNING id\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM inserted)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Item added with AI analysis.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Could not add item.')\nEND AS response;"
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), updated AS (\n  UPDATE items i\n  SET\n    market_price = {{$json.market_price}},\n    savings_daily = {{$json.savings_daily}},\n    savings_weekly = {{$json.savings_weekly}},\n    alternatives = '{{$json.alternatives_sql}}'::jsonb\n  FROM board_row br\n  WHERE i.id = {{$json.item_id}}\n    AND i.board_id = br.id\n  RETURNING i.id\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM updated)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Item analysis updated.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Could not update item analysis.')\nEND AS response;"
       },
       "id": "pg_add_item",
-      "name": "PG Add Item",
+      "name": "PG Update Item",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
       "position": [
         1420,
         360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH actor AS (\n  SELECT id\n  FROM users\n  WHERE username = '{{$json.username_sql}}'\n    AND pin_hash = crypt('{{$json.pin_sql}}', pin_hash)\n  LIMIT 1\n), board_row AS (\n  SELECT b.id, b.board_code, b.name\n  FROM boards b\n  JOIN board_members bm ON bm.board_id = b.id\n  JOIN actor a ON a.id = bm.user_id\n  WHERE b.board_code = '{{$json.board_code_sql}}'\n  LIMIT 1\n), inserted AS (\n  INSERT INTO items (\n    board_id, item_name, target_price, start_date, end_date,\n    alternatives, added_by\n  )\n  SELECT\n    br.id,\n    '{{$json.item_name_sql}}',\n    {{$json.target_price}},\n    NULLIF('{{$json.start_date}}', '')::date,\n    NULLIF('{{$json.end_date}}', '')::date,\n    '[]'::jsonb,\n    a.id\n  FROM board_row br\n  CROSS JOIN actor a\n  RETURNING id\n), items_data AS (\n  SELECT\n    i.id,\n    i.item_name,\n    i.target_price,\n    i.market_price,\n    i.savings_daily,\n    i.savings_weekly,\n    i.start_date,\n    i.end_date,\n    i.alternatives,\n    u.username AS added_by,\n    i.created_at\n  FROM items i\n  JOIN board_row br ON br.id = i.board_id\n  JOIN users u ON u.id = i.added_by\n  ORDER BY i.created_at DESC\n)\nSELECT CASE\n  WHEN EXISTS (SELECT 1 FROM inserted)\n  THEN json_build_object(\n    'ok', true,\n    'message', 'Item added. Run analysis for recommendations.',\n    'board', (SELECT row_to_json(b) FROM board_row b),\n    'items', COALESCE((SELECT json_agg(row_to_json(i)) FROM items_data i), '[]'::json)\n  )\n  ELSE json_build_object('ok', false, 'error', 'Could not add item.')\nEND AS response;"
+      },
+      "id": "pg_add_item_basic",
+      "name": "PG Add Item",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1160,
+        520
       ]
     },
     {
@@ -312,6 +330,13 @@
         ],
         [
           {
+            "node": "PG Add Item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Serper Search",
             "type": "main",
             "index": 0
@@ -352,7 +377,7 @@
       "main": [
         [
           {
-            "node": "PG Add Item",
+            "node": "PG Update Item",
             "type": "main",
             "index": 0
           }
@@ -371,6 +396,17 @@
       ]
     },
     "PG Join Board": {
+      "main": [
+        [
+          {
+            "node": "Format Common",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG Update Item": {
       "main": [
         [
           {

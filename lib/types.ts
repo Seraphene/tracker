@@ -1,4 +1,10 @@
-export type BudgetAction = "login" | "create_board" | "join_board" | "add_item" | "get_board";
+export type BudgetAction =
+  | "login"
+  | "create_board"
+  | "join_board"
+  | "add_item"
+  | "analyze_item"
+  | "get_board";
 
 export interface ItemRecord {
   id: number;

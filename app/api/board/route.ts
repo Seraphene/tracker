@@ -34,6 +34,16 @@ const payloadSchema = z.discriminatedUnion("action", [
     end_date: isoDate,
   }),
   z.object({
+    action: z.literal("analyze_item"),
+    ...commonFields,
+    board_code: z.string().trim().min(1),
+    item_id: z.coerce.number().int().positive(),
+    item_name: z.string().trim().min(1),
+    target_price: z.number().positive(),
+    start_date: isoDate,
+    end_date: isoDate,
+  }),
+  z.object({
     action: z.literal("get_board"),
     ...commonFields,
     board_code: z.string().trim().min(1),
