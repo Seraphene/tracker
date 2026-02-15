@@ -16,6 +16,8 @@ export interface ItemRecord {
   start_date: string | null;
   end_date: string | null;
   alternatives: Array<{ name: string; estimated_price: number | null }>;
+  analysis_summary: string | null;
+  analysis_recommendation: string | null;
   added_by: string;
   created_at: string;
 }

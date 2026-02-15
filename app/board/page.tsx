@@ -455,6 +455,16 @@ export default function BoardPage() {
                     .join(", ")}
                 </p>
               ) : null}
+              {item.analysis_summary || item.analysis_recommendation ? (
+                <div className="analysis">
+                  {item.analysis_summary ? (
+                    <p className="meta">Summary: {item.analysis_summary}</p>
+                  ) : null}
+                  {item.analysis_recommendation ? (
+                    <p className="meta">Recommendation: {item.analysis_recommendation}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </article>
           ))}
         </div>

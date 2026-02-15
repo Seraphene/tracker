@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS items (
   start_date DATE,
   end_date DATE,
   alternatives JSONB NOT NULL DEFAULT '[]'::jsonb,
+  analysis_summary TEXT,
+  analysis_recommendation TEXT,
   added_by BIGINT NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
